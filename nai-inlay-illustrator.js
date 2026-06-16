@@ -5,9 +5,12 @@
 (() => {
   const AGENT_TYPE = "nai-inlay-illustrator";
   const AGENT_NAME = "NAI-Style Inlay Illustrator";
-  const INSTALLER_VERSION = "2026-06-16-custom-agent-v4";
+  const INSTALLER_VERSION = "2026-06-16-custom-agent-v5";
   const STYLE_ID = "nai-inlay-illustrator-inlay-width-style";
   const IMAGE_RANGES = new Set(["1-3", "2-5", "3-10"]);
+  const DEFAULT_IMAGE_RANGE = "1-3";
+  const DEFAULT_MAX_TOKENS = 4096;
+  const DEFAULT_RUN_INTERVAL = 5;
   const MIN_IMAGE_DIMENSION = 256;
   const MAX_IMAGE_DIMENSION = 2048;
   const DEFAULT_IMAGE_WIDTH = 832;
@@ -47,45 +50,21 @@
   ].join(", ");
   const DEFAULT_POSITIVE_PROMPT = "";
   const DEFAULT_NEGATIVE_PROMPT = "";
+  const INLAY_IMAGE_SELECTOR = [
+    ".mari-message-content img.mari-inlay-image",
+    '.mari-message-content img[alt^="inlay-"]',
+    '.mari-message-content img[alt*="inlay image"]',
+    '.mari-message-content img[src*="/api/gallery/file/"][alt*="slot-"]',
+  ].join(", ");
 
   const INLAY_IMAGE_CSS = `
-.mari-message-content img.mari-inlay-image,
-.mari-message-content img[alt^="inlay-"],
-.mari-message-content img[alt*="inlay image"],
-.mari-message-content img[src*="/api/gallery/file/"][alt*="slot-"] {
+${INLAY_IMAGE_SELECTOR} {
   display: block !important;
   width: 100% !important;
   max-width: 100% !important;
   height: auto !important;
   margin: 0 !important;
   object-fit: contain !important;
-}
-
-.mari-message-content button:has(> img.mari-inlay-image),
-.mari-message-content button:has(> img[alt^="inlay-"]),
-.mari-message-content button:has(> img[alt*="inlay image"]) {
-  display: block !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  text-align: left !important;
-}
-
-.mari-message-content:has(img.mari-inlay-image),
-.mari-message-content:has(img[alt^="inlay-"]),
-.mari-message-content:has(img[alt*="inlay image"]) {
-  width: 100% !important;
-}
-
-.mari-message-body:has(.mari-message-content img.mari-inlay-image),
-.mari-message-body:has(.mari-message-content img[alt^="inlay-"]),
-.mari-message-body:has(.mari-message-content img[alt*="inlay image"]) {
-  width: min(100%, 82%) !important;
-}
-
-.mari-message-bubble:has(.mari-message-content img.mari-inlay-image),
-.mari-message-bubble:has(.mari-message-content img[alt^="inlay-"]),
-.mari-message-bubble:has(.mari-message-content img[alt*="inlay image"]) {
-  width: 100% !important;
 }
 `.trim();
 
@@ -148,7 +127,7 @@ Rules:
   }
 
   function normalizeRange(value) {
-    return typeof value === "string" && IMAGE_RANGES.has(value) ? value : "1-3";
+    return typeof value === "string" && IMAGE_RANGES.has(value) ? value : DEFAULT_IMAGE_RANGE;
   }
 
   function positiveIntOr(value, fallback, max) {
@@ -190,20 +169,96 @@ Rules:
     return data;
   }
 
+  function setImportantStyle(element, styles) {
+    if (!element?.style) return;
+    for (const [name, value] of Object.entries(styles)) {
+      element.style.setProperty(name, value, "important");
+    }
+  }
+
+  function collectInlayImages(root) {
+    if (typeof document === "undefined") return [];
+    const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+    const images = [];
+    if (scope.nodeType === 1 && typeof scope.matches === "function" && scope.matches(INLAY_IMAGE_SELECTOR)) {
+      images.push(scope);
+    }
+    images.push(...scope.querySelectorAll(INLAY_IMAGE_SELECTOR));
+    return images;
+  }
+
+  function applyInlayImageSizing(root) {
+    for (const image of collectInlayImages(root)) {
+      setImportantStyle(image, {
+        display: "block",
+        width: "100%",
+        "max-width": "100%",
+        height: "auto",
+        margin: "0",
+        "object-fit": "contain",
+      });
+
+      const button = image.closest("button");
+      setImportantStyle(button, {
+        display: "block",
+        width: "100%",
+        "max-width": "100%",
+        "text-align": "left",
+      });
+      if (button?.parentElement && !button.parentElement.classList.contains("mari-message-content")) {
+        setImportantStyle(button.parentElement, {
+          display: "block",
+          width: "100%",
+          "max-width": "100%",
+        });
+      }
+
+      setImportantStyle(image.closest(".mari-message-content"), { width: "100%" });
+      setImportantStyle(image.closest(".mari-message-bubble"), { width: "100%" });
+    }
+  }
+
   function installInlayImageStyles() {
     if (typeof document === "undefined" || !document.head) return;
     const existing = document.getElementById(STYLE_ID);
-    if (existing) {
-      existing.textContent = INLAY_IMAGE_CSS;
-      return;
-    }
-
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
+    const style = existing ?? document.createElement("style");
+    if (!existing) style.id = STYLE_ID;
     style.textContent = INLAY_IMAGE_CSS;
-    document.head.appendChild(style);
+    if (!existing) document.head.appendChild(style);
+    let frame = 0;
+    const scheduleApply = (root) => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        applyInlayImageSizing(root);
+      });
+    };
+    scheduleApply(document);
+
+    const observer =
+      typeof MutationObserver === "function" && document.body
+        ? new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+              for (const node of mutation.addedNodes) {
+                if (node.nodeType !== 1) continue;
+                if (
+                  (typeof node.matches === "function" && node.matches(INLAY_IMAGE_SELECTOR)) ||
+                  (typeof node.querySelector === "function" && node.querySelector(INLAY_IMAGE_SELECTOR))
+                ) {
+                  scheduleApply(node);
+                  return;
+                }
+              }
+            }
+          })
+        : null;
+    observer?.observe(document.body, { childList: true, subtree: true });
     if (typeof marinara?.onCleanup === "function") {
-      marinara.onCleanup(() => style.remove());
+      marinara.onCleanup(() => {
+        if (frame) cancelAnimationFrame(frame);
+        observer?.disconnect();
+        if (!existing) style.remove();
+      });
     }
   }
 
@@ -222,11 +277,12 @@ Rules:
   }
 
   function buildSettings(existingSettings, imageConnectionId) {
+    const shouldMigrateAggressiveDefaults = existingSettings.installerVersion !== INSTALLER_VERSION;
     const next = {
       resultType: "inlay_image_plan",
       contextSize: positiveIntOr(existingSettings.contextSize, 8, 200),
-      maxTokens: positiveIntOr(existingSettings.maxTokens, 4096, 32768),
-      runInterval: positiveIntOr(existingSettings.runInterval, 1, 100),
+      maxTokens: positiveIntOr(existingSettings.maxTokens, DEFAULT_MAX_TOKENS, 32768),
+      runInterval: positiveIntOr(existingSettings.runInterval, DEFAULT_RUN_INTERVAL, 100),
       imageRange: normalizeRange(existingSettings.imageRange),
       imageWidth: imageDimensionOr(existingSettings.imageWidth, DEFAULT_IMAGE_WIDTH),
       imageHeight: imageDimensionOr(existingSettings.imageHeight, DEFAULT_IMAGE_HEIGHT),
@@ -237,8 +293,13 @@ Rules:
     next.resultType = "inlay_image_plan";
     next.imageRange = normalizeRange(next.imageRange);
     next.contextSize = positiveIntOr(next.contextSize, 8, 200);
-    next.maxTokens = positiveIntOr(next.maxTokens, 4096, 32768);
-    next.runInterval = positiveIntOr(next.runInterval, 1, 100);
+    next.maxTokens = positiveIntOr(next.maxTokens, DEFAULT_MAX_TOKENS, 32768);
+    next.runInterval = positiveIntOr(next.runInterval, DEFAULT_RUN_INTERVAL, 100);
+    if (shouldMigrateAggressiveDefaults) {
+      if (next.maxTokens > DEFAULT_MAX_TOKENS) next.maxTokens = DEFAULT_MAX_TOKENS;
+      if (next.runInterval < DEFAULT_RUN_INTERVAL) next.runInterval = DEFAULT_RUN_INTERVAL;
+      next.imageRange = DEFAULT_IMAGE_RANGE;
+    }
     next.imageWidth = imageDimensionOr(next.imageWidth, DEFAULT_IMAGE_WIDTH);
     next.imageHeight = imageDimensionOr(next.imageHeight, DEFAULT_IMAGE_HEIGHT);
     next.imagePositivePrompt = optionalPromptOr(

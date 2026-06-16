@@ -31,12 +31,11 @@ The extension does not generate images by itself. It creates a custom agent that
 ## Installation
 
 1. Open Marinara Engine.
-2. Go to `Settings` -> `Extensions`.
-3. Import or paste `nai-inlay-illustrator.js`.
-4. Enable the extension.
-5. Reload Marinara if the custom agent does not appear immediately.
-6. Open the `Agents` panel.
-7. Confirm that `NAI-Style Inlay Illustrator` exists under custom agents.
+2. Import or paste `nai-inlay-illustrator.js`.
+3. Enable the extension.
+4. Reload Marinara if the custom agent does not appear immediately.
+5. Open the `Agents` panel.
+6. Confirm that `NAI-Style Inlay Illustrator` exists under custom agents.
 
 The extension is an installer script. When it runs, it creates or updates the custom agent through Marinara's normal `/api/agents` route.
 

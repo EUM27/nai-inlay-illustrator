@@ -12,6 +12,7 @@ The extension does not generate images by itself. It creates a custom agent that
 - Stores generated images as inlay images between matching response paragraphs.
 - Uses Marinara's existing `image_generation` connection routing for the actual image request.
 - Works with any supported Marinara image generation connection, not only NovelAI.
+- Injects small display CSS so generated inlay images can fill the chat bubble width.
 
 ## What It Does Not Do
 
@@ -67,12 +68,14 @@ You can change this later in the `Agents` panel. The selected connection control
 
 - `Image Generation Connection Override`: the image backend Marinara uses for generated inlay images.
 - `Image count range`: `1-3`, `2-5`, or `3-10`.
+- `Image width` / `Image height`: the dimensions sent with each inlay image request. Defaults to `832 x 1216`.
 - `Run interval`: how often the agent should create inlay images after assistant responses.
-- `Positive prompt / tags`: global image tags appended to planned prompts.
-- `Negative prompt`: global negative tags sent to the image generator.
+- `Positive prompt / tags`: optional global image tags appended to planned prompts. Empty by default.
+- `Negative prompt`: optional global negative tags sent to the image generator. Empty by default.
 - `Connection Override`: optional LLM connection for the planning agent itself.
 
-Image dimensions follow Marinara's existing image generation settings for the route that handles inlay images.
+If the custom agent has no image dimensions saved, Marinara falls back to the chat selfie resolution and then the global selfie image settings.
+The extension does not install style or quality prompt tags by default. Put shared style tags in the selected image generation connection's prompt prefix, or add per-agent tags manually if you really want an extra addendum.
 
 ## Prompt Behavior
 
@@ -114,6 +117,7 @@ The planner is instructed to use chronological beats and to keep scene tags, cha
 - Unsafe requests include Marinara's CSRF header.
 - API keys remain in Marinara connection settings on the server.
 - The extension stores no provider token, secret, password, or API key.
+- The display CSS only targets generated inlay images inside chat message content.
 
 ## Troubleshooting
 
